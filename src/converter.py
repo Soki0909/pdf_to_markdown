@@ -16,6 +16,36 @@ from PIL import Image
 from .models import ConvertOptions, PageContent, ConvertResult
 
 
+def deduplicate_text(text: str) -> str:
+    """重複している連続文字を除去する。
+
+    一部のPDFでは装飾効果のために同じ文字が連続して配置されている。
+    例: "第第１１編編" -> "第１編"
+
+    Args:
+        text: 入力テキスト
+
+    Returns:
+        重複文字を除去したテキスト
+    """
+    if not text:
+        return text
+
+    result = []
+    i = 0
+    while i < len(text):
+        # 現在の文字を追加
+        result.append(text[i])
+
+        # 次の文字が同じ場合はスキップ
+        if i + 1 < len(text) and text[i] == text[i + 1]:
+            i += 2  # 重複をスキップ
+        else:
+            i += 1
+
+    return ''.join(result)
+
+
 def extract_contents(page, horizontal_strategy: str = "text") -> List[Dict[str, Any]]:
     """PDFページから重複しないテキストおよび表データを抽出する。
 
@@ -27,21 +57,39 @@ def extract_contents(page, horizontal_strategy: str = "text") -> List[Dict[str, 
         抽出したコンテンツのリスト。各要素は'top'キーと
         'text'または'table'キーを持つ辞書
     """
+
     contents = []
     table_settings = {"horizontal_strategy": horizontal_strategy}
-    tables = page.find_tables(table_settings=table_settings)
+
+    # テーブル抽出を試行
+    try:
+        tables = page.find_tables(table_settings=table_settings)
+    except Exception as e:
+        print(f"Warning: Table extraction failed: {e}")
+        tables = []
 
     # テーブルに含まれないすべてのテキストデータを抽出
     non_table_content = page
     for table in tables:
-        non_table_content = non_table_content.outside_bbox(table.bbox)
+        try:
+            non_table_content = non_table_content.outside_bbox(table.bbox)
+        except Exception:
+            continue
 
-    for line in non_table_content.extract_text_lines():
-        contents.append({'top': line['top'], 'text': line['text']})
+    try:
+        for line in non_table_content.extract_text_lines():
+            # 重複文字を除去
+            text = deduplicate_text(line['text'])
+            contents.append({'top': line['top'], 'text': text})
+    except Exception as e:
+        print(f"Warning: Text extraction failed: {e}")
 
     # すべての表データを抽出
     for table in tables:
-        contents.append({'top': table.bbox[1], 'table': table})
+        try:
+            contents.append({'top': table.bbox[1], 'table': table})
+        except Exception:
+            continue
 
     # 行を上部位置でソート
     contents = sorted(contents, key=itemgetter('top'))
@@ -147,6 +195,20 @@ def extract_images(
             # pdfplumberの画像情報から画像を抽出
             # 画像のバウンディングボックスを取得
             x0, top, x1, bottom = img['x0'], img['top'], img['x1'], img['bottom']
+
+            # ページ境界を取得
+            page_width = page.width
+            page_height = page.height
+
+            # bboxをページ境界内にクリップ
+            x0 = max(0, min(x0, page_width))
+            x1 = max(0, min(x1, page_width))
+            top = max(0, min(top, page_height))
+            bottom = max(0, min(bottom, page_height))
+
+            # 有効な領域かチェック（幅・高さが0以上）
+            if x1 <= x0 or bottom <= top:
+                continue
 
             # ページから画像領域をクロップ
             cropped = page.within_bbox((x0, top, x1, bottom))
