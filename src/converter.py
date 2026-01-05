@@ -16,34 +16,57 @@ from PIL import Image
 from .models import ConvertOptions, PageContent, ConvertResult
 
 
-def deduplicate_text(text: str) -> str:
-    """重複している連続文字を除去する。
+def deduplicate_page(page):
+    """同じ位置にある重複文字を除去したページを返す。
 
-    一部のPDFでは装飾効果のために同じ文字が連続して配置されている。
-    例: "第第１１編編" -> "第１編"
+    一部のPDFでは装飾効果（影やアウトライン）のために
+    同じ位置に同じ文字が複数配置されている。
+    位置情報（x0, top）を基に重複を検出・除去する。
+
+    この方法では正当な連続文字（「第11編」など）は影響を受けない。
 
     Args:
-        text: 入力テキスト
+        page: pdfplumberのPageオブジェクト
 
     Returns:
-        重複文字を除去したテキスト
+        重複文字を除去したPageオブジェクト
     """
-    if not text:
-        return text
+    if not page.chars:
+        return page
 
-    result = []
-    i = 0
-    while i < len(text):
-        # 現在の文字を追加
-        result.append(text[i])
+    # 位置ベースで重複を検出し、ユニークな文字のインデックスを記録
+    seen_positions = set()
+    indices_to_keep = set()
 
-        # 次の文字が同じ場合はスキップ
-        if i + 1 < len(text) and text[i] == text[i + 1]:
-            i += 2  # 重複をスキップ
-        else:
-            i += 1
+    for i, char in enumerate(page.chars):
+        # 位置と文字内容でキーを作成（小数点以下1桁で丸める）
+        key = (
+            round(char['x0'], 1),
+            round(char['top'], 1),
+            char['text']
+        )
+        if key not in seen_positions:
+            seen_positions.add(key)
+            indices_to_keep.add(i)
 
-    return ''.join(result)
+    # 重複がある場合のみフィルタリング
+    if len(indices_to_keep) < len(page.chars):
+        # 各charオブジェクトのid()をインデックスにマッピング
+        char_index_map = {id(char): i for i, char in enumerate(page.chars)}
+
+        def keep_object(obj):
+            # 文字オブジェクト以外は保持
+            if obj.get('object_type') != 'char':
+                return True
+            # このオブジェクトのインデックスを取得してチェック
+            char_id = id(obj)
+            if char_id in char_index_map:
+                return char_index_map[char_id] in indices_to_keep
+            return True
+
+        return page.filter(keep_object)
+
+    return page
 
 
 def extract_contents(page, horizontal_strategy: str = "text") -> List[Dict[str, Any]]:
@@ -57,6 +80,8 @@ def extract_contents(page, horizontal_strategy: str = "text") -> List[Dict[str, 
         抽出したコンテンツのリスト。各要素は'top'キーと
         'text'または'table'キーを持つ辞書
     """
+    # 重複文字を位置ベースで除去
+    page = deduplicate_page(page)
 
     contents = []
     table_settings = {"horizontal_strategy": horizontal_strategy}
@@ -78,9 +103,7 @@ def extract_contents(page, horizontal_strategy: str = "text") -> List[Dict[str, 
 
     try:
         for line in non_table_content.extract_text_lines():
-            # 重複文字を除去
-            text = deduplicate_text(line['text'])
-            contents.append({'top': line['top'], 'text': text})
+            contents.append({'top': line['top'], 'text': line['text']})
     except Exception as e:
         print(f"Warning: Text extraction failed: {e}")
 
