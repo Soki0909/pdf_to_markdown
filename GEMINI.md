@@ -20,6 +20,7 @@ pdf_to_markdown/
 ## アーキテクチャ
 
 - **converter.py**: コアモジュール。CLIとWebアプリの両方から利用可能
+  - `deduplicate_page()`: 装飾効果で重複配置された文字を位置情報(x0, top)に基づき除去
 - **models.py**: `ConvertOptions`, `PageContent`, `ConvertResult`データクラス
 - **main.py**: argparseを使用したCLIインターフェース
 
