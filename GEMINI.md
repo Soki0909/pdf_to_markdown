@@ -31,10 +31,13 @@ python -m src.main test.pdf -o output/
 
 # テスト実行（単一ファイル）
 python -m src.main test.pdf -o output/ --single --name merged
+
+# テスト実行（画像抽出付き）
+python -m src.main test.pdf -o output/ --images
 ```
 
 ## 将来の拡張予定
 
 1. **Webアプリ化**: FastAPIでPDFアップロード→zip形式でダウンロード
-2. **画像抽出**: pdfplumberの画像抽出機能を活用
-3. **バッチ処理**: 複数PDFの一括変換
+2. **バッチ処理**: 複数PDFの一括変換
+

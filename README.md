@@ -7,6 +7,7 @@ PDFファイルをMarkdown形式に変換するCLIツールです。
 
 - **テキスト抽出**: PDFからテキストコンテンツを抽出
 - **表のMarkdown変換**: PDF内の表をMarkdownテーブル形式に変換
+- **画像抽出**: PDF内の画像をPNG形式で抽出（オプション）
 - **2つの出力モード**:
   - ページ単位出力: 各ページを個別のMarkdownファイルとして出力
   - 単一ファイル出力: 全ページを1つのMarkdownファイルに結合
@@ -42,6 +43,7 @@ python -m src.main input.pdf -o output/ --single
 | `--output` | `-o` | 出力ディレクトリ | `./output` |
 | `--single` | `-s` | 単一ファイル出力 | `False` |
 | `--name` | `-n` | 出力ファイル名プレフィックス | PDFファイル名 |
+| `--images` | `-i` | 画像抽出 | `False` |
 | `--strategy` | | 表抽出戦略（`lines`/`text`） | `text` |
 
 ### 例
@@ -49,6 +51,9 @@ python -m src.main input.pdf -o output/ --single
 ```bash
 # 出力ファイル名を指定
 python -m src.main input.pdf -o output/ --single --name merged
+
+# 画像も抽出
+python -m src.main input.pdf -o output/ --images
 
 # 表抽出戦略を変更
 python -m src.main input.pdf -o output/ --strategy lines

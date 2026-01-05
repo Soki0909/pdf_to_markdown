@@ -4,12 +4,14 @@ pdfplumberを使用してPDFからテキストと表を抽出し、
 Markdown形式に変換する機能を提供する。
 """
 
+import io
 import os
 from operator import itemgetter
 from pathlib import Path
 from typing import List, Dict, Any, Union
 
 import pdfplumber
+from PIL import Image
 
 from .models import ConvertOptions, PageContent, ConvertResult
 
@@ -113,15 +115,73 @@ def convert_contents_to_markdown(contents: List[Dict[str, Any]]) -> str:
     return '\n\n'.join(parts)
 
 
+def extract_images(
+    page,
+    page_number: int,
+    output_dir: Path,
+    file_prefix: str
+) -> List[str]:
+    """PDFページから画像を抽出して保存する。
+
+    Args:
+        page: pdfplumberのPageオブジェクト
+        page_number: ページ番号
+        output_dir: 画像出力ディレクトリ
+        file_prefix: ファイル名プレフィックス
+
+    Returns:
+        保存された画像ファイルパスのリスト
+    """
+    saved_images = []
+    images = page.images
+
+    if not images:
+        return saved_images
+
+    # 画像出力ディレクトリを作成
+    images_dir = output_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, img in enumerate(images, start=1):
+        try:
+            # pdfplumberの画像情報から画像を抽出
+            # 画像のバウンディングボックスを取得
+            x0, top, x1, bottom = img['x0'], img['top'], img['x1'], img['bottom']
+
+            # ページから画像領域をクロップ
+            cropped = page.within_bbox((x0, top, x1, bottom))
+            if cropped:
+                # ページを画像としてレンダリング
+                pil_image = cropped.to_image(resolution=150).original
+
+                # ファイル名を生成
+                filename = f"{file_prefix}_page{page_number}_img{idx}.png"
+                filepath = images_dir / filename
+
+                # 画像を保存
+                pil_image.save(filepath, "PNG")
+                saved_images.append(str(filepath))
+                print(f"Extracted: {filepath}")
+
+        except Exception as e:
+            print(
+                f"Warning: Failed to extract image {idx} on page {page_number}: {e}")
+            continue
+
+    return saved_images
+
+
 def convert_pdf(
     pdf_path: Union[str, Path],
-    options: ConvertOptions = None
+    options: ConvertOptions = None,
+    output_dir: Union[str, Path] = None
 ) -> ConvertResult:
     """PDFファイルをMarkdownに変換する。
 
     Args:
         pdf_path: PDFファイルのパス
         options: 変換オプション（Noneの場合はデフォルト値を使用）
+        output_dir: 画像出力ディレクトリ（extract_images有効時に必要）
 
     Returns:
         変換結果を含むConvertResultオブジェクト
@@ -132,11 +192,33 @@ def convert_pdf(
     pdf_path = Path(pdf_path)
     result = ConvertResult(source_filename=pdf_path.stem)
 
+    # 画像抽出が有効な場合、出力ディレクトリが必要
+    if options.extract_images and output_dir:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages, start=1):
             contents = extract_contents(page, options.horizontal_strategy)
             markdown = convert_contents_to_markdown(contents)
-            result.pages.append(PageContent(page_number=i, markdown=markdown))
+
+            # 画像抽出
+            images = []
+            if options.extract_images and output_dir:
+                images = extract_images(
+                    page, i, output_dir, pdf_path.stem
+                )
+                # Markdownに画像参照を追加
+                if images:
+                    image_refs = []
+                    for img_path in images:
+                        img_name = Path(img_path).name
+                        image_refs.append(f"![{img_name}](images/{img_name})")
+                    markdown += "\n\n" + "\n\n".join(image_refs)
+
+            result.pages.append(PageContent(
+                page_number=i, markdown=markdown, images=images
+            ))
 
     return result
 

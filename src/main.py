@@ -34,6 +34,9 @@ def parse_args(args=None):
   
   # 出力ファイル名を指定
   python -m src.main input.pdf -o output/ --single --name merged
+  
+  # 画像も抽出
+  python -m src.main input.pdf -o output/ --images
 '''
     )
 
@@ -71,6 +74,12 @@ def parse_args(args=None):
         help='表抽出の水平戦略（デフォルト: text）'
     )
 
+    parser.add_argument(
+        '-i', '--images',
+        action='store_true',
+        help='PDFから画像を抽出してimages/ディレクトリに保存'
+    )
+
     return parser.parse_args(args)
 
 
@@ -98,12 +107,13 @@ def main(args=None):
     # 変換オプションの設定
     options = ConvertOptions(
         output_mode="single" if parsed.single else "per_page",
-        horizontal_strategy=parsed.strategy
+        horizontal_strategy=parsed.strategy,
+        extract_images=parsed.images
     )
 
     try:
         print(f"変換中: {pdf_path}")
-        result = convert_pdf(pdf_path, options)
+        result = convert_pdf(pdf_path, options, output_dir=parsed.output)
 
         print(f"総ページ数: {len(result.pages)}")
 
