@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .converter import convert_pdf, save_result
+from .converter import convert_pdf, save_result, convert_directory
 from .models import ConvertOptions
 
 
@@ -43,7 +43,7 @@ def parse_args(args=None):
     parser.add_argument(
         'pdf_path',
         type=str,
-        help='変換するPDFファイルのパス'
+        help='変換するPDFファイルまたはディレクトリのパス'
     )
 
     parser.add_argument(
@@ -94,14 +94,10 @@ def main(args=None):
     """
     parsed = parse_args(args)
 
-    # PDFファイルの存在確認
-    pdf_path = Path(parsed.pdf_path)
-    if not pdf_path.exists():
-        print(f"エラー: ファイルが見つかりません: {pdf_path}", file=sys.stderr)
-        return 1
-
-    if not pdf_path.suffix.lower() == '.pdf':
-        print(f"エラー: PDFファイルを指定してください: {pdf_path}", file=sys.stderr)
+    # パスの存在確認
+    target_path = Path(parsed.pdf_path)
+    if not target_path.exists():
+        print(f"エラー: パスが見つかりません: {target_path}", file=sys.stderr)
         return 1
 
     # 変換オプションの設定
@@ -112,20 +108,48 @@ def main(args=None):
     )
 
     try:
-        print(f"変換中: {pdf_path}")
-        result = convert_pdf(pdf_path, options, output_dir=parsed.output)
+        # ディレクトリかファイルかで処理を分岐
+        if target_path.is_dir():
+            # ディレクトリ一括変換モード
+            print(f"ディレクトリモード: {target_path}")
+            result = convert_directory(target_path, parsed.output, options)
 
-        print(f"総ページ数: {len(result.pages)}")
+            # 統計情報を表示
+            print(f"\n{'='*50}")
+            print(f"変換完了")
+            print(f"{'='*50}")
+            print(f"総PDFファイル数: {result['total']}")
+            print(f"成功: {result['success']}")
+            print(f"失敗: {result['failed']}")
+            print(f"{'='*50}")
 
-        created_files = save_result(
-            result,
-            parsed.output,
-            options,
-            file_prefix=parsed.name
-        )
+            return 0 if result['failed'] == 0 else 1
 
-        print(f"\n変換完了: {len(created_files)} ファイル作成")
-        return 0
+        elif target_path.is_file():
+            # 単一ファイル変換モード（既存の処理）
+            if not target_path.suffix.lower() == '.pdf':
+                print(f"エラー: PDFファイルを指定してください: {target_path}", file=sys.stderr)
+                return 1
+
+            print(f"ファイルモード: {target_path}")
+            result = convert_pdf(target_path, options,
+                                 output_dir=parsed.output)
+
+            print(f"総ページ数: {len(result.pages)}")
+
+            created_files = save_result(
+                result,
+                parsed.output,
+                options,
+                file_prefix=parsed.name
+            )
+
+            print(f"\n変換完了: {len(created_files)} ファイル作成")
+            return 0
+
+        else:
+            print(f"エラー: 無効なパス: {target_path}", file=sys.stderr)
+            return 1
 
     except Exception as e:
         print(f"エラー: 変換中にエラーが発生しました: {e}", file=sys.stderr)

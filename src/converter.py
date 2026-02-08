@@ -308,6 +308,121 @@ def convert_pdf(
     return result
 
 
+def find_pdf_files(directory: Path) -> List[Path]:
+    """ディレクトリ内のPDFファイルを再帰的に検索する。
+
+    Args:
+        directory: 検索対象のディレクトリパス
+
+    Returns:
+        発見されたPDFファイルのパスリスト
+    """
+    pdf_files = []
+    for item in directory.rglob("*.pdf"):
+        if item.is_file():
+            pdf_files.append(item)
+    return sorted(pdf_files)
+
+
+def convert_directory(
+    input_dir: Union[str, Path],
+    output_dir: Union[str, Path],
+    options: ConvertOptions = None
+) -> Dict[str, Any]:
+    """ディレクトリ内の全PDFファイルを一括変換する。
+
+    ディレクトリ構造を保持したまま、各PDFファイルをMarkdownに変換する。
+
+    Args:
+        input_dir: 入力ディレクトリ
+        output_dir: 出力ディレクトリ
+        options: 変換オプション
+
+    Returns:
+        変換結果の統計情報を含む辞書:
+        - total: 総PDFファイル数
+        - success: 成功した変換数
+        - failed: 失敗した変換数
+        - files: 変換されたPDFファイルのリスト
+    """
+    if options is None:
+        options = ConvertOptions()
+
+    input_dir = Path(input_dir)
+    output_dir = Path(output_dir)
+
+    if not input_dir.exists():
+        raise FileNotFoundError(f"入力ディレクトリが見つかりません: {input_dir}")
+
+    if not input_dir.is_dir():
+        raise NotADirectoryError(f"ディレクトリではありません: {input_dir}")
+
+    # PDFファイルを再帰的に検索
+    pdf_files = find_pdf_files(input_dir)
+
+    if not pdf_files:
+        print(f"警告: PDFファイルが見つかりませんでした: {input_dir}")
+        return {
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "files": []
+        }
+
+    print(f"発見されたPDFファイル: {len(pdf_files)}個")
+
+    success_count = 0
+    failed_count = 0
+    converted_files = []
+
+    for idx, pdf_path in enumerate(pdf_files, start=1):
+        # 相対パスを計算
+        rel_path = pdf_path.relative_to(input_dir)
+        print(f"\n[{idx}/{len(pdf_files)}] 変換中: {rel_path}")
+
+        try:
+            # 出力先のディレクトリパスを構築
+            if options.output_mode == "single":
+                # 単一ファイルモード: PDF名.md をディレクトリ構造に配置
+                file_output_dir = output_dir / rel_path.parent
+                file_output_dir.mkdir(parents=True, exist_ok=True)
+                file_prefix = pdf_path.stem
+            else:
+                # ページ単位モード: PDF名/配下にページファイルを配置
+                file_output_dir = output_dir / rel_path.parent / pdf_path.stem
+                file_output_dir.mkdir(parents=True, exist_ok=True)
+                file_prefix = pdf_path.stem
+
+            # PDF変換を実行
+            result = convert_pdf(pdf_path, options, output_dir=file_output_dir)
+
+            # 結果を保存
+            created_files = save_result(
+                result,
+                file_output_dir,
+                options,
+                file_prefix=file_prefix
+            )
+
+            success_count += 1
+            converted_files.append({
+                "path": str(rel_path),
+                "files": [str(f) for f in created_files]
+            })
+
+        except Exception as e:
+            print(f"エラー: {rel_path} の変換に失敗しました: {e}")
+            failed_count += 1
+            continue
+
+    return {
+        "total": len(pdf_files),
+        "success": success_count,
+        "failed": failed_count,
+        "files": converted_files
+    }
+
+
 def save_result(
     result: ConvertResult,
     output_dir: Union[str, Path],

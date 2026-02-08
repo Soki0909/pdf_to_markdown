@@ -1,5 +1,5 @@
 # Output files
-output/
+output*/
 
 # Test PDF files
 *.pdf
@@ -41,3 +41,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+
+/pdfs*
